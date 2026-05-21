@@ -1,32 +1,27 @@
 name: system-monitor
-base: core24
+base: core26 # Atualizado para a base do Ubuntu 26.04 LTS
 version: '0.1.0'
-summary: Monitor de sistema para automação e robótica
+summary: Monitor de Sistema feito em Flutter
 description: |
-  Monitor de sistema nativo para Ubuntu, desenvolvido com Flutter e Dart.
-  Permite monitorar CPU, RAM, disco, rede, GPU e dispositivos de robótica
-  como portas seriais e nodes ROS2.
+  Um aplicativo para monitoramento de recursos do sistema,
+  incluindo CPU, uso de disco, redes e processos.
 
-grade: devel
-
-confinement: devmode
-
-
+grade: stable
+confinement: strict
 
 apps:
   system-monitor:
-    command: system_monitor
-    extensions: [gnome]
+    command: bin/system_monitor
+    extensions: [gnome] # Ativa o suporte ao toolkit gráfico do ecossistema Ubuntu 26.04
     plugs:
-      - desktop
-      - desktop-legacy
-      - wayland
-      - x11
-      - opengl
+      - network
+      - home
+      - system-observe     # Permite leitura de processos e CPU (/proc)
+      - hardware-observe   # Permite leitura de sensores e hardware (/sys)
+      - mount-observe      # Permite mapear discos e partições montadas
 
 parts:
   system-monitor:
-    source: .
     plugin: flutter
+    source: .
     flutter-target: lib/main.dart
-    flutter-channel: stable
