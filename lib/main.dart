@@ -1,21 +1,65 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:fl_chart/fl_chart.dart'; // Importa a biblioteca de gráficos
+import 'package:yaru/yaru.dart'; // Garante a integração com o tema do Ubuntu
+import 'package:fl_chart/fl_chart.dart'; 
 import 'services/system_usage_service.dart';
 
+// 1. PONTO DE ENTRADA OBRIGATÓRIO
+void main() {
+  runApp(const MyApp());
+}
+
+// 2. WIDGET DE CONFIGURAÇÃO DA APLICAÇÃO
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return YaruTheme(
+      builder: (context, yaru, child) {
+        return MaterialApp(
+          title: 'System Monitor Dash',
+          theme: yaru.theme,
+          darkTheme: yaru.darkTheme,
+          home: const PerformanceDashboardPage(), // Define a página inicial
+          debugShowCheckedModeBanner: false,
+        );
+      },
+    );
+  }
+}
+
+// 3. A SUA PÁGINA DE DESEMPENHO COM OS GRÁFICOS
 class PerformanceDashboardPage extends StatefulWidget {
   const PerformanceDashboardPage({super.key});
 
   @override
-  State<PerformanceDashboardPage> createState() =>
-      _PerformanceDashboardPageState();
+  State<PerformanceDashboardPage> createState() => _PerformanceDashboardPageState();
 }
 
 class _PerformanceDashboardPageState extends State<PerformanceDashboardPage> {
   final _service = SystemUsageService();
-
+  StreamSubscription<SystemMetrics>? _subscription;
+  
   final List<FlSpot> _cpuHistory = [];
   final List<FlSpot> _memHistory = [];
   int _timeCounter = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _subscription = _service.metricsStream.listen((metrics) {
+      setState(() {
+        _updateHistory(metrics.cpuUsagePercentage, metrics.memoryUsagePercentage);
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
+  }
 
   void _updateHistory(double cpuValue, double memValue) {
     _timeCounter++;
@@ -34,52 +78,31 @@ class _PerformanceDashboardPageState extends State<PerformanceDashboardPage> {
         elevation: 0,
         backgroundColor: Colors.transparent,
       ),
-      body: StreamBuilder<SystemMetrics>(
-        stream: _service.metricsStream,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting &&
-              _cpuHistory.isEmpty) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (snapshot.hasData && snapshot.data != null) {
-            final metrics = snapshot.data!;
-            _updateHistory(
-              metrics.cpuUsagePercentage,
-              metrics.memoryUsagePercentage,
-            );
-          }
-
-          return Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: ListView(
-              children: [
-                _buildMetricCard(
-                  title: 'Processador (CPU)',
-                  subtitle: _cpuHistory.isNotEmpty
-                      ? '${_cpuHistory.last.y.toStringAsFixed(1)}%'
-                      : '0%',
-                  history: _cpuHistory,
-                  lineColor: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(height: 24),
-                _buildMetricCard(
-                  title: 'Memória RAM',
-                  subtitle: _memHistory.isNotEmpty
-                      ? '${_memHistory.last.y.toStringAsFixed(1)}%'
-                      : '0%',
-                  history: _memHistory,
-                  lineColor: Colors.purple,
-                ),
-              ],
+      body: _cpuHistory.isEmpty
+          ? const Center(child: CircularProgressIndicator())
+          : Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: ListView(
+                children: [
+                  _buildMetricCard(
+                    title: 'Processador (CPU)',
+                    subtitle: '${_cpuHistory.last.y.toStringAsFixed(1)}%',
+                    history: _cpuHistory,
+                    lineColor: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(height: 24),
+                  _buildMetricCard(
+                    title: 'Memória RAM',
+                    subtitle: '${_memHistory.last.y.toStringAsFixed(1)}%',
+                    history: _memHistory,
+                    lineColor: Colors.purple,
+                  ),
+                ],
+              ),
             ),
-          );
-        },
-      ),
     );
   }
 
-  /// Constrói o Card com o Gráfico de Linha em tempo real (Estilo Windows 11)
   Widget _buildMetricCard({
     required String title,
     required String subtitle,
@@ -96,19 +119,8 @@ class _PerformanceDashboardPageState extends State<PerformanceDashboardPage> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Text(
-                  subtitle,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: lineColor,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                Text(subtitle, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: lineColor, fontWeight: FontWeight.bold)),
               ],
             ),
             const SizedBox(height: 20),
@@ -117,30 +129,26 @@ class _PerformanceDashboardPageState extends State<PerformanceDashboardPage> {
               child: LineChart(
                 LineChartData(
                   minY: 0,
-                  maxY:
-                      100, // Escala fixa de 0 a 100% igual ao monitor do Windows
+                  maxY: 100,
+                  minX: _timeCounter > 30 ? (_timeCounter - 30).toDouble() : 0,
+                  maxX: _timeCounter > 30 ? _timeCounter.toDouble() : 30,
                   gridData: FlGridData(
                     show: true,
-                    drawVerticalLine:
-                        false, // Linhas horizontais de grade limpas
+                    drawVerticalLine: false,
                     getDrawingHorizontalLine: (value) => FlLine(
                       color: Theme.of(context).dividerColor.withOpacity(0.1),
                       strokeWidth: 1,
                     ),
                   ),
-                  titlesData: const FlTitlesData(
-                    show: false,
-                  ), // Remove bordas de texto para visual minimalista
+                  titlesData: const FlTitlesData(show: false),
                   borderData: FlBorderData(show: false),
                   lineBarsData: [
                     LineChartBarData(
                       spots: history,
-                      isCurved: true, // Curva suave na linha do gráfico
+                      isCurved: true,
                       barWidth: 2,
                       color: lineColor,
-                      dotData: const FlDotData(
-                        show: false,
-                      ), // Oculta bolinhas nos nós
+                      dotData: const FlDotData(show: false),
                       belowBarData: BarAreaData(
                         show: true,
                         gradient: LinearGradient(
@@ -162,4 +170,4 @@ class _PerformanceDashboardPageState extends State<PerformanceDashboardPage> {
       ),
     );
   }
-} // Chave final que fecha a classe corretamente
+}
