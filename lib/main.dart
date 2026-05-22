@@ -1,176 +1,165 @@
 import 'package:flutter/material.dart';
-import 'package:yaru/yaru.dart';
+import 'package:fl_chart/fl_chart.dart'; // Importa a biblioteca de gráficos
+import 'services/system_usage_service.dart';
 
-Future<void> main() async {
-  await YaruWindowTitleBar.ensureInitialized();
-  WidgetsFlutterBinding.ensureInitialized();
-  runApp(const SystemMonitorApp());
-}
-
-class SystemMonitorApp extends StatelessWidget {
-  const SystemMonitorApp({super.key});
+class PerformanceDashboardPage extends StatefulWidget {
+  const PerformanceDashboardPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return YaruTheme(
-      builder: (context, yaru, child) {
-        return MaterialApp(
-          title: 'Monitor de Sistema',
-          theme: yaru.theme,
-          darkTheme: yaru.darkTheme,
-          themeMode: yaru.themeMode,
-          debugShowCheckedModeBanner: false,
-          home: const HomePage(),
-        );
-      },
-    );
+  State<PerformanceDashboardPage> createState() =>
+      _PerformanceDashboardPageState();
+}
+
+class _PerformanceDashboardPageState extends State<PerformanceDashboardPage> {
+  final _service = SystemUsageService();
+
+  final List<FlSpot> _cpuHistory = [];
+  final List<FlSpot> _memHistory = [];
+  int _timeCounter = 0;
+
+  void _updateHistory(double cpuValue, double memValue) {
+    _timeCounter++;
+    _cpuHistory.add(FlSpot(_timeCounter.toDouble(), cpuValue));
+    _memHistory.add(FlSpot(_timeCounter.toDouble(), memValue));
+
+    if (_cpuHistory.length > 30) _cpuHistory.removeAt(0);
+    if (_memHistory.length > 30) _memHistory.removeAt(0);
   }
-}
-
-
-class _Page {
-  const _Page({
-    required this.title,
-    required this.icon,
-  });
-
-  final String title;
-  final IconData icon;
-}
-
-const _systemPages = [
-  _Page(title: 'Desempenho', icon: YaruIcons.computer),
-  _Page(title: 'Processos',  icon: YaruIcons.tree),
-  _Page(title: 'Histórico',  icon: YaruIcons.history),
-];
-
-const _hardwarePages = [
-  _Page(title: 'GPU',   icon: YaruIcons.chip),
-  _Page(title: 'Disco', icon: YaruIcons.drive_harddisk),
-  _Page(title: 'Rede',  icon: YaruIcons.network),
-];
-
-const _roboticsPages = [
-  _Page(title: 'Serial / USB', icon: YaruIcons.usb_stick),
-  _Page(title: 'ROS2',         icon: YaruIcons.game_controller),
-  _Page(title: 'Sensores',     icon: YaruIcons.weather),
-];
-
-final _allPages = [
-  ..._systemPages,
-  ..._hardwarePages,
-  ..._roboticsPages,
-];
-
-
-class HomePage extends StatelessWidget {
-  const HomePage({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: YaruMasterDetailPage(
-        length: _allPages.length,
-        appBar: YaruWindowTitleBar(
-          border: BorderSide.none,
-          backgroundColor: YaruMasterDetailTheme.of(context).sideBarColor,
-        ),
-        tileBuilder: (context, index, selected, availableWidth) {
-          return _NavTile(
-            page: _allPages[index],
-            selected: selected,
-            sectionLabel: switch (index) {
-              0 => 'Sistema',
-              3 => 'Hardware',
-              6 => 'Robótica',
-              _ => null,
-            },
+      appBar: AppBar(
+        title: const Text('Desempenho do Sistema'),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+      ),
+      body: StreamBuilder<SystemMetrics>(
+        stream: _service.metricsStream,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              _cpuHistory.isEmpty) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasData && snapshot.data != null) {
+            final metrics = snapshot.data!;
+            _updateHistory(
+              metrics.cpuUsagePercentage,
+              metrics.memoryUsagePercentage,
+            );
+          }
+
+          return Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: ListView(
+              children: [
+                _buildMetricCard(
+                  title: 'Processador (CPU)',
+                  subtitle: _cpuHistory.isNotEmpty
+                      ? '${_cpuHistory.last.y.toStringAsFixed(1)}%'
+                      : '0%',
+                  history: _cpuHistory,
+                  lineColor: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(height: 24),
+                _buildMetricCard(
+                  title: 'Memória RAM',
+                  subtitle: _memHistory.isNotEmpty
+                      ? '${_memHistory.last.y.toStringAsFixed(1)}%'
+                      : '0%',
+                  history: _memHistory,
+                  lineColor: Colors.purple,
+                ),
+              ],
+            ),
           );
         },
-        pageBuilder: (context, index) {
-          return _PlaceholderPage(page: _allPages[index]);
-        },
       ),
     );
   }
-}
 
-
-class _NavTile extends StatelessWidget {
-  const _NavTile({
-    required this.page,
-    required this.selected,
-    this.sectionLabel,
-  });
-
-  final _Page page;
-  final bool selected;
-  final String? sectionLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (sectionLabel != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Text(
-              sectionLabel!.toUpperCase(),
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Theme.of(context).colorScheme.outline,
-                    letterSpacing: 0.8,
-                  ),
-            ),
-          ),
-        YaruMasterTile(
-          leading: Icon(page.icon),
-          title: Text(page.title),
-        ),
-      ],
-    );
-  }
-}
-
-class _PlaceholderPage extends StatelessWidget {
-  const _PlaceholderPage({required this.page});
-
-  final _Page page;
-
-  @override
-  Widget build(BuildContext context) {
-    return YaruDetailPage(
-      appBar: YaruWindowTitleBar(
-        title: Text(page.title),
-        border: BorderSide.none,
-      ),
-      body: Center(
+  /// Constrói o Card com o Gráfico de Linha em tempo real (Estilo Windows 11)
+  Widget _buildMetricCard({
+    required String title,
+    required String subtitle,
+    required List<FlSpot> history,
+    required Color lineColor,
+  }) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              page.icon,
-              size: 48,
-              color: Theme.of(context).colorScheme.outline,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              page.title,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.outline,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
                   ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Em construção',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.outline,
+                ),
+                Text(
+                  subtitle,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: lineColor,
+                    fontWeight: FontWeight.bold,
                   ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              height: 160,
+              child: LineChart(
+                LineChartData(
+                  minY: 0,
+                  maxY:
+                      100, // Escala fixa de 0 a 100% igual ao monitor do Windows
+                  gridData: FlGridData(
+                    show: true,
+                    drawVerticalLine:
+                        false, // Linhas horizontais de grade limpas
+                    getDrawingHorizontalLine: (value) => FlLine(
+                      color: Theme.of(context).dividerColor.withOpacity(0.1),
+                      strokeWidth: 1,
+                    ),
+                  ),
+                  titlesData: const FlTitlesData(
+                    show: false,
+                  ), // Remove bordas de texto para visual minimalista
+                  borderData: FlBorderData(show: false),
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: history,
+                      isCurved: true, // Curva suave na linha do gráfico
+                      barWidth: 2,
+                      color: lineColor,
+                      dotData: const FlDotData(
+                        show: false,
+                      ), // Oculta bolinhas nos nós
+                      belowBarData: BarAreaData(
+                        show: true,
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            lineColor.withOpacity(0.3),
+                            lineColor.withOpacity(0.0),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
       ),
     );
   }
-}
+} // Chave final que fecha a classe corretamente
